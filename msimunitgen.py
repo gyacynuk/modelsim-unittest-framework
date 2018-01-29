@@ -1,7 +1,7 @@
 import sys
 import re
 
-filename = 'fulladder.txt'
+filename = 'alu.txt'
 
 OPEN_BRACKETS = ['(', '{', '[']  # order of elements between these sets is crucial
 CLOSE_BRACKETS = [')', '}', ']']
@@ -38,6 +38,17 @@ def check_bracket_pairing(lines):
             line, pos = unclosed
             log_bracket_error(lines, line, pos)
             passed = False
+
+    return passed
+
+def check_assert_double_equals(lines):
+    passed = True
+    for l in lines:
+        match = re.search(r'assert\s+[\w\:\[\]]+\s*\=\s*\d+', l)
+        if match is not None:
+            passed = False
+            print('Syntax Error - double equals (\"==\") must be used in assert statements:\n\t\"{0:s}\"'.format(match.group()))
+            print('\t ' + ' '*match.group().index('=') + '^')
 
     return passed
 
@@ -217,7 +228,7 @@ def generate_assert_func(testblocks):
                 # Single variable assertion
                 else:
                     if len(expected) != 1:
-                        print('Syntax Error - too many values passed to assert for the single variable \"{0:s)\".'.format(variable))
+                        print('Syntax Error - too many values passed to assert for the single variable \"{0:s}\".'.format(variable))
                         print('             - to assert multiple variables at once use a list variable instead.')
                         return False
                     else:
@@ -369,6 +380,11 @@ def parse_blocks(lines):
     generate_force_calls(testblocks)
 
     out_test_blocks = []
+
+    #TODO parse this data from the meta block
+    default_meta = 'vlib work;vlog -timescale 1ns/1ns lab3q7.v;vsim lab3q7 -l outputq7.txt;log {/*};add wave {/*};'
+    out_test_blocks = default_meta.split(';')
+
     for i in range(len(testblocks)):
         out_test_blocks.append(testblocks[i][testblocks[i].index('{') + 1:-1])
     with open('out.do', 'w') as out:
@@ -380,6 +396,7 @@ def parse_blocks(lines):
 with open(filename, 'r') as file:
     lines = file.readlines()
     passed_syntax = check_bracket_pairing(lines)
+    passed_syntax = passed_syntax and check_assert_double_equals(lines)
 
     if passed_syntax and parse_blocks(lines):
         print('File generation successful')

@@ -1,7 +1,7 @@
 import sys
 import re
 
-filename = 'mux_example.txt'
+filename = 'fulladder.txt'
 
 OPEN_BRACKETS = ['(', '{', '[']  # order of elements between these sets is crucial
 CLOSE_BRACKETS = [')', '}', ']']
@@ -41,9 +41,11 @@ def check_bracket_pairing(lines):
 
     return passed
 
-def find_block_end(file_string, bracket_type='{}'):
+#annoying since you have to add one to the index, but it is used heavily
+# TODO depricate
+def find_block_end(file_string, start_index = 0, bracket_type='{}'):
     bcount = 1
-    for i in range(len(file_string)):
+    for i in range(start_index, len(file_string)):
         if file_string[i] == bracket_type[0]:
             bcount += 1
         elif file_string[i] == bracket_type[1]:
@@ -52,47 +54,77 @@ def find_block_end(file_string, bracket_type='{}'):
             return i
     return len(file_string)
 
-def generate_bin_func(file_string):
-    string = file_string
-    match = re.search(r'bin\s*\(', string)
-    dec_val = 0
-    num_bits = ''
-    bin_val = ''
-    while match is not None:
-        end = find_block_end(string[match.end(0):], bracket_type='()')
-        args = [token.strip() for token in string[match.end(0):match.end(0) + end].split(',')]
-        if len(args) != 2:
-            print('Semantic Error - the bin() function takes exactly 2 arguments.')
-            return False, ''
+#new version, much easier to use
+# TODO replace the old verison with this one
+# Given a string, starting fron the start index, assuming that one bracket exists at start_index -1, return the index of the last bracket + 1
+def find_block_end2(file_string, start_index = 0, bracket_type='{}'):
+    bcount = 1
+    for i in range(start_index, len(file_string)):
+        if file_string[i] == bracket_type[0]:
+            bcount += 1
+        elif file_string[i] == bracket_type[1]:
+            bcount -= 1
+        if bcount == 0:
+            return i + 1
+    return len(file_string) - start_index
 
-        if args[0].isdigit():
-            dec_val = int(args[0])
-        elif args[0].startswith('0x'):
-            try:
-                dec_val = int(args[0], 16)
-            except ValueError:
+def generate_sums(testblocks):
+    for i in range(len(testblocks)):
+        pattern = re.compile(r'\d+(\s*\+\s*\d+)+')
+        match = pattern.search(testblocks[i])
+
+        while match is not None:
+            sum = 0
+            nums = [t.strip() for t in match.group().split('+') if t != '']
+
+            for num in nums:
+                sum += int(num)
+
+            testblocks[i] = testblocks[i].replace(match.group(), str(sum), 1)
+            match = pattern.search(testblocks[i])
+
+
+def generate_bin_func(testblocks):
+    for i in range(len(testblocks)):
+        match = re.search(r'bin\s*\(', testblocks[i])
+        dec_val = 0
+        num_bits = ''
+        bin_val = ''
+        while match is not None:
+            end = find_block_end(testblocks[i][match.end(0):], bracket_type='()')
+            args = [token.strip() for token in testblocks[i][match.end(0):match.end(0) + end].split(',')]
+            if len(args) != 2:
+                print('Semantic Error - the bin() function takes exactly 2 arguments.')
+                return False, ''
+
+            if args[0].isdigit():
+                dec_val = int(args[0])
+            elif args[0].startswith('0x'):
+                try:
+                    dec_val = int(args[0], 16)
+                except ValueError:
+                    print('Semantic Error - the first argument to the bin function "{0:s}" is invalid. Only integer or hex values are accepted.'.format(args[0]))
+                    return False, ''
+            else:
                 print('Semantic Error - the first argument to the bin function "{0:s}" is invalid. Only integer or hex values are accepted.'.format(args[0]))
                 return False, ''
-        else:
-            print('Semantic Error - the first argument to the bin function "{0:s}" is invalid. Only integer or hex values are accepted.'.format(args[0]))
-            return False, ''
 
-        if args[1].isdigit():
-            num_bits = args[1]
-        else:
-            print('Semantic Error - the second argument to the bin function "{0:s}" is invalid. Only integer values are accepted.'.format(args[1]))
-            return False, ''
+            if args[1].isdigit():
+                num_bits = args[1]
+            else:
+                print('Semantic Error - the second argument to the bin function "{0:s}" is invalid. Only integer values are accepted.'.format(args[1]))
+                return False, ''
 
-        bin_val = format(dec_val, '0' + num_bits + 'b')
+            bin_val = format(dec_val, '0' + num_bits + 'b')
 
-        if len(bin_val) > int(num_bits):
-            print('Semantic Error - overflow from the bin() function: {0:d} cannot be represented with {1:s} binary bits.'.format(dec_val, num_bits))
-            return False, ''
+            if len(bin_val) > int(num_bits):
+                print('Semantic Error - overflow from the bin() function: {0:d} cannot be represented with {1:s} binary bits.'.format(dec_val, num_bits))
+                return False, ''
 
-        string = string[:match.start()] + bin_val + string[end + match.end() + 1:]
-        match = re.search(r'bin\s*\(', string)
+            testblocks[i] = testblocks[i][:match.start()] + bin_val + testblocks[i][end + match.end() + 1:]
+            match = re.search(r'bin\s*\(', testblocks[i])
 
-    return True, string
+    return True
 
 def generate_force_calls(testblocks):
     for b in range(len(testblocks)):
@@ -194,6 +226,48 @@ def generate_assert_func(testblocks):
                 testblocks[b] = testblocks[b].replace(assert_string, gen_code, 1)
 
 
+def generate_for_blocks(testblocks):
+    found_match = False
+
+    for i in range(len(testblocks)):
+        pattern = re.compile(r'for\s+\w\s+in\s+\[\d+:\d+\]\s*\{')
+        match = pattern.search(testblocks[i])
+
+        if match is not None:
+            found_match = True
+            end = find_block_end2(testblocks[i], match.end())
+            find = testblocks[i][match.start():end]
+            find_mut = find
+            replace = ''
+
+            tokens = [t.strip() for t in match.group().split(' ') if t != '']
+            variable = str(tokens[1])
+            raw_range = tokens[3][1:-1]
+            if raw_range[-1] == ']':
+                raw_range = raw_range[:-1]
+
+            indices = [int(t) for t in raw_range.split(':')]
+            magnitude = abs(indices[0] - indices[1]) + 1
+            increment = 1
+            if indices[0] - indices[1] > 0:
+                increment = -1
+
+            for j in range(indices[0], indices[1] + increment, increment):
+                var_pattern = re.compile(r'[\s:\[\*\+\-\/\(\=]' + variable + r'[\s;:\]\*\+\-\/\),]')
+                var_match = var_pattern.search(find_mut)
+                while var_match is not None:
+                    find_mut = find_mut.replace(var_match.group(), var_match.group().replace(variable, str(j)))
+                    var_match = var_pattern.search(find_mut)
+                replace += find_mut[find_mut.index('{') + 1:-1] + ';'
+                find_mut = find
+
+            testblocks[i] = testblocks[i].replace(find, replace)
+
+    # repeat until all for blocks are generated
+    if found_match:
+        generate_for_blocks(testblocks)
+
+
 def generate_meta(meta):
     pass
 
@@ -204,9 +278,7 @@ def generate_permute(permute):
     pass
 
 def parse_blocks(lines):
-    sucess, file_string = generate_bin_func(''.join([l.strip() if not l.strip().startswith("#") else '' for l in lines]))
-    if not sucess:
-        return False
+    file_string = ''.join([l.strip() if not l.strip().startswith("#") else '' for l in lines])
 
     # Parse top level blocks (meta, test) since they cannot be nested
     # Meta blocks
@@ -221,6 +293,9 @@ def parse_blocks(lines):
     # Test blocks
     testblocks_indices = [(m.start(0), m.end(0)) for m in re.finditer(r'test\s*(\w+)?\s*\{', file_string)]
     testblocks = [file_string[indices[0]:indices[1] + find_block_end(file_string[indices[1]:]) + 1] for indices in testblocks_indices]
+
+    #TODO Generate for blocks BEFORE PERMUTE
+    generate_for_blocks(testblocks)
 
     # Recursively parse permute blocks (which can only exist in testblocks. Permute blocks cannot be nested in one another)
     # Permute block
@@ -288,6 +363,8 @@ def parse_blocks(lines):
                 testblocks[i] = testblocks[i].replace(block, "".join(perm_sub_blocks), 1)
                 continue
 
+    generate_sums(testblocks)
+    generate_bin_func(testblocks)
     generate_assert_func(testblocks)
     generate_force_calls(testblocks)
 

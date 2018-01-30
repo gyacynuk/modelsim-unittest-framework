@@ -426,6 +426,14 @@ def parse_blocks(lines):
     return True
 
 
+if len(sys.argv) == 1:
+    filename = input('Enter filename of unit test file: ')
+elif len(sys.argv) == 2:
+    filename = sys.argv[1]
+else:
+    print('A unit test file must be passed in as an argument.')
+    sys.exit(0)
+
 with open(filename, 'r') as file:
     lines = file.readlines()
     passed_syntax = check_bracket_pairing(lines)

@@ -1,12 +1,15 @@
 import sys
 import re
 
-filename = 'alu.txt'
+filename = 'meta_test.txt'
 
 OPEN_BRACKETS = ['(', '{', '[']  # order of elements between these sets is crucial
 CLOSE_BRACKETS = [')', '}', ']']
 
-TIMESTEP = '2 ns'
+REQUIRED_META = ['vfile', 'vmodule']
+meta_commands = []
+meta_dict = {'vlib': 'work', 'timescale': '1ns/1ns', 'timestep': '4ns', 'logfile': 'output.txt', 'genfile': 'out.do'}
+meta = []
 
 def log_bracket_error(lines, line, pos, open=True):
     if open:
@@ -17,6 +20,7 @@ def log_bracket_error(lines, line, pos, open=True):
     print('\t ' + ' '*pos + '^')
 
 def check_bracket_pairing(lines):
+    global OPEN_BRACKETS, CLOSE_BRACKETS
     passed = True
     stacks = [[], [], []]
     for i in range(len(lines)):
@@ -214,9 +218,9 @@ def generate_assert_func(testblocks):
                         increment = -1
 
                     if len(expected) == 1:
-                        gen_code = 'run {0:s};echo \"assert {1:s} {2:s}\";'.format(TIMESTEP, expected * magnitude, test_name)
+                        gen_code = 'run {0:s};echo \"assert {1:s} {2:s}\";'.format(meta_dict['timestep'], expected * magnitude, test_name)
                     elif len(expected) == magnitude:
-                        gen_code = 'run {0:s};echo \"assert {1:s} {2:s}\";'.format(TIMESTEP, expected, test_name)
+                        gen_code = 'run {0:s};echo \"assert {1:s} {2:s}\";'.format(meta_dict['timestep'], expected, test_name)
                     else:
                         print('Syntax Error - wrong amount of values passed to assert function: \"{0:s}\"'.format(assert_string))
                         print('             - in this case provide 1 or {0:d} values instead.'.format(magnitude))
@@ -232,7 +236,7 @@ def generate_assert_func(testblocks):
                         print('             - to assert multiple variables at once use a list variable instead.')
                         return False
                     else:
-                        gen_code = 'run {0:s};echo \"assert {1:s} {2:s}\";examine {{{3:s}}};'.format(TIMESTEP, expected, test_name, variable)
+                        gen_code = 'run {0:s};echo \"assert {1:s} {2:s}\";examine {{{3:s}}};'.format(meta_dict['timestep'], expected, test_name, variable)
 
                 testblocks[b] = testblocks[b].replace(assert_string, gen_code, 1)
 
@@ -278,9 +282,35 @@ def generate_for_blocks(testblocks):
     if found_match:
         generate_for_blocks(testblocks)
 
+def add_meta_command(command, value):
+    if command in meta_dict or command in REQUIRED_META:
+        meta_dict[command] = value
+    else:
+        meta_commands.append(command + ' ' + value)
 
-def generate_meta(meta):
-    pass
+
+def generate_meta(meta_string):
+    global meta, meta_commands, meta_dict
+
+    lines = [t.strip() for t in meta_string.replace('=', ' ').split(';') if t != '']
+    for line in lines:
+        tokens = [t.strip() for t in line.split(' ') if t != '']
+        command = tokens[0]
+        value = ' '.join(tokens[1:])
+        add_meta_command(command, value)
+
+    try:
+        meta.append('vlib ' + meta_dict['vlib'])
+        meta.append('vlog -timescale ' + meta_dict['timescale'] + ' ' + meta_dict['vfile'])
+        meta.append('vsim ' + meta_dict['vmodule'] + ' -l ' + meta_dict['logfile'])
+        meta += meta_commands
+    except KeyError as e:
+        print('Syntax Error - missing a definition for {0:s} in the meta block.'.format(str(e)))
+        return False
+
+    return True
+
+
 
 def generate_test(test):
     pass
@@ -293,19 +323,26 @@ def parse_blocks(lines):
 
     # Parse top level blocks (meta, test) since they cannot be nested
     # Meta blocks
-    metablock_indices = [(m.start(0), m.end(0)) for m in re.finditer(r'meta\s*\{', file_string)]
-    if len(metablock_indices) != 0:
-        if len(metablock_indices) > 1:
-            print('Semantic Warning - multiple meta blocks detected. Only the first block will be executed.')
-        indices = metablock_indices[0]
-        metablock = file_string[indices[0]:indices[1] + find_block_end(file_string[indices[1]:]) + 1]
-        ## TODO Before execution, check for only one pair of {}
+    match = re.search(r'meta\s*\{', file_string)
+    if match is not None:
+        metablock = file_string[match.end():find_block_end2(file_string, match.end())-1]
+        generate_meta(metablock)
+    else:
+        print('Syntax Error - No meta block found.')
+
+    # metablock_indices = [(m.start(), m.end()) for m in re.finditer(r'meta\s*\{', file_string)]
+    # if len(metablock_indices) != 0:
+    #     if len(metablock_indices) > 1:
+    #         print('Semantic Warning - multiple meta blocks detected. Only the first block will be executed.')
+    #     indices = metablock_indices[0]
+    #     metablock = file_string[indices[1] + 1 : find_block_end(file_string[indices[1]:]) + 1]
+    #     #generate_meta(metablock)
 
     # Test blocks
     testblocks_indices = [(m.start(0), m.end(0)) for m in re.finditer(r'test\s*(\w+)?\s*\{', file_string)]
     testblocks = [file_string[indices[0]:indices[1] + find_block_end(file_string[indices[1]:]) + 1] for indices in testblocks_indices]
 
-    #TODO Generate for blocks BEFORE PERMUTE
+    # For blocks need to be generated before permute blocks
     generate_for_blocks(testblocks)
 
     # Recursively parse permute blocks (which can only exist in testblocks. Permute blocks cannot be nested in one another)
@@ -379,15 +416,11 @@ def parse_blocks(lines):
     generate_assert_func(testblocks)
     generate_force_calls(testblocks)
 
-    out_test_blocks = []
-
-    #TODO parse this data from the meta block
-    default_meta = 'vlib work;vlog -timescale 1ns/1ns lab3q7.v;vsim lab3q7 -l outputq7.txt;log {/*};add wave {/*};'
-    out_test_blocks = default_meta.split(';')
+    out_test_blocks = meta
 
     for i in range(len(testblocks)):
         out_test_blocks.append(testblocks[i][testblocks[i].index('{') + 1:-1])
-    with open('out.do', 'w') as out:
+    with open(meta_dict['genfile'], 'w') as out:
         out.writelines(';'.join(out_test_blocks).replace(';', '\n'))
 
     return True

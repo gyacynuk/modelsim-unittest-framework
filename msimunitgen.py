@@ -98,6 +98,20 @@ def generate_sums(testblocks):
             testblocks[i] = testblocks[i].replace(match.group(), str(sum), 1)
             match = pattern.search(testblocks[i])
 
+def generate_products(testblocks):
+    for i in range(len(testblocks)):
+        pattern = re.compile(r'\d+(\s*\*\s*\d+)+')
+        match = pattern.search(testblocks[i])
+
+        while match is not None:
+            nums = [t.strip() for t in match.group().split('*') if t != '']
+            product = int(nums[0])
+
+            for num in nums[1:]:
+                product = product * int(num)
+
+            testblocks[i] = testblocks[i].replace(match.group(), str(product), 1)
+            match = pattern.search(testblocks[i])
 
 def generate_bin_func(testblocks):
     for i in range(len(testblocks)):
@@ -411,6 +425,7 @@ def parse_blocks(lines):
                 testblocks[i] = testblocks[i].replace(block, "".join(perm_sub_blocks), 1)
                 continue
 
+    generate_products(testblocks)
     generate_sums(testblocks)
     generate_bin_func(testblocks)
     generate_assert_func(testblocks)

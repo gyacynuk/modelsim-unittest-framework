@@ -10,7 +10,7 @@ To avoid having to manually analyze the output square-wave in Model Sim, the gen
 The unit test text file was designed to be intuitive and easy to use. On a macro level, it is composed of different types of "blocks", which are represented with the curly braces "{ }". Inside of these block are statements, where each statement must end with a semicolon. The types of blocks are detailed below.
 
 #### The Meta Block
-At the top of the file a meta block is declared using the "meta" keyword, which tells the generator information regarding other files that the generated .do file will have to interact with. An example meta block can be seen below:
+At the top of the file a meta block is declared using the **meta** keyword, which tells the generator information regarding other files that the generated .do file will have to interact with. An example meta block can be seen below:
 
 ~~~
 meta {
@@ -33,7 +33,7 @@ Any other statements in the meta block will be written directly to the .do file.
 
 #### The Test Block
 ##### Basics
-Unit tests are organized into test blocks. A test block is declared using the "test" keyword followed by the name of the test (which cannot contain spaces). An example test block can be found below:
+Unit tests are organized into test blocks. A test block is declared using the **test** keyword followed by the name of the test (which cannot contain spaces). An example test block can be found below:
 
 ~~~~
 test my_test {
@@ -92,7 +92,7 @@ test my_test_shorthand2 {
 Here we can see that the bin() function takes two arguments. The first is either a hexadecimal value (prefixed with "0x"), a decimal value, or even an equation (such as 1\*2 + 3). The second argument is the number of bits that the resulting binary number should have. Pay attention when choosing this argument to avoid an overflow error.  
 
 #### The For Block
-The for block is used to repeat the same test with different indexable variables. It must be declared within a test block by using the "for" keyword, and it can be nested in other for blocks. An example can be seen below:
+The for block is used to repeat the same test with different indexable variables. It must be declared within a test block by using the **for** keyword, and it can be nested in other for blocks. An example can be seen below:
 
 ~~~~
 test for_example {
@@ -100,7 +100,27 @@ test for_example {
     
     for i in [0:15] {
     	INPUT[3:0] = bin(i, 4);
-        assert OUTPUT == i/8;
+        assert OUTPUT == bin(1/8, 2);
     }
 }
 ~~~~
+
+The for block requires a looping variable (in this case "i"), and a looping range described using square brackets [ ] (in this case "[0:15]"). The looping range is inclusive, and order-sensitive, meaning "[0:15]" loops from 0 to 15, while "[15:0]" loops from 15 to 0.
+
+#### The Permute Block
+The permute block is declared using the **permute** keyword, and must be declared within a test block. It cannot be nested in other permute blocks. It is similar to the for block, but does not give the user the option to specify variable values - instead it iterates over every possible permutation of the marked variables. It is used to for test cases when the value of certain input variables should have no input on the output. An example is seen below:
+
+~~~~
+test permute_example {
+	SELECT[1:0] = 0;
+    
+	permute {
+    	ARBITRARY[2:0] = *;
+    	INPUT[3:1] = *;
+        INPUT[0] = 1;
+        assert OUTPUT = 1;
+    }
+}
+~~~~
+
+In this example, the values if "ARBITRARY[2:0]" and "INPUT[3:1]" will be set to every possible binary permutation, with the assert statement being evaluated after each permutation (since we are assigning 3+4 = 7 variables, this will result in 2^7 = 128 permutations). This can be useful for testing modules such as multiplexers, where only one input should affect the output (the selected input), and the other inputs should have no affect.

@@ -110,7 +110,7 @@ The for block requires a looping variable (in this case "i"), and a looping rang
 #### The Permute Block
 The permute block is declared using the **permute** keyword, and must be declared within a test block. It cannot be nested in other permute blocks. It is similar to the for block, but does not give the user the option to specify variable values - instead it iterates over every possible permutation of the marked variables. It is used to for test cases when the value of certain input variables should have no input on the output. An example is seen below:
 
-~~~~
+````
 test permute_example {
 	SELECT[1:0] = 0;
     
@@ -121,6 +121,6 @@ test permute_example {
         assert OUTPUT = 1;
     }
 }
-~~~~
+````
 
 In this example, the values if "ARBITRARY[2:0]" and "INPUT[3:1]" will be set to every possible binary permutation, with the assert statement being evaluated after each permutation (since we are assigning 3+4 = 7 variables, this will result in 2^7 = 128 permutations). This can be useful for testing modules such as multiplexers, where only one input should affect the output (the selected input), and the other inputs should have no affect.

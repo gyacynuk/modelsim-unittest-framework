@@ -83,68 +83,39 @@ def find_block_end2(file_string, start_index = 0, bracket_type='{}'):
             return i + 1
     return len(file_string) - start_index
 
-def generate_sums(testblocks):
-    for i in range(len(testblocks)):
-        pattern = re.compile(r'\d+(\s*\+\s*\d+)+')
-        match = pattern.search(testblocks[i])
-
-        while match is not None:
-            sum = 0
-            nums = [t.strip() for t in match.group().split('+') if t != '']
-
-            for num in nums:
-                sum += int(num)
-
-            testblocks[i] = testblocks[i].replace(match.group(), str(sum), 1)
-            match = pattern.search(testblocks[i])
-
-def generate_products(testblocks):
-    for i in range(len(testblocks)):
-        pattern = re.compile(r'\d+(\s*\*\s*\d+)+')
-        match = pattern.search(testblocks[i])
-
-        while match is not None:
-            nums = [t.strip() for t in match.group().split('*') if t != '']
-            product = int(nums[0])
-
-            for num in nums[1:]:
-                product = product * int(num)
-
-            testblocks[i] = testblocks[i].replace(match.group(), str(product), 1)
-            match = pattern.search(testblocks[i])
-
 def generate_bin_func(testblocks):
     for i in range(len(testblocks)):
         match = re.search(r'bin\s*\(', testblocks[i])
         dec_val = 0
-        num_bits = ''
+        num_bits = 0
         bin_val = ''
         while match is not None:
             end = find_block_end(testblocks[i][match.end(0):], bracket_type='()')
-            args = [token.strip() for token in testblocks[i][match.end(0):match.end(0) + end].split(',')]
+            args = testblocks[i][match.end(0):match.end(0) + end].split(',')
             if len(args) != 2:
                 print('Semantic Error - the bin() function takes exactly 2 arguments.')
                 return False, ''
 
-            if args[0].isdigit():
-                dec_val = int(args[0])
-            elif args[0].startswith('0x'):
+            if args[0].startswith('0x'):
                 try:
                     dec_val = int(args[0], 16)
                 except ValueError:
                     print('Semantic Error - the first argument to the bin function "{0:s}" is invalid. Only integer or hex values are accepted.'.format(args[0]))
                     return False, ''
             else:
-                print('Semantic Error - the first argument to the bin function "{0:s}" is invalid. Only integer or hex values are accepted.'.format(args[0]))
+                try:
+                    dec_val = int(eval(args[0]))
+                except NameError or SyntaxError or ZeroDivisionError:
+                    print('Semantic Error - the equation (\"{0:s}\") passed to the bin() function cannot be evaluated.'.format(args[0]))
+                    return False, ''
+
+            try:
+                num_bits = int(eval(args[1]))
+            except NameError or SyntaxError or ZeroDivisionError:
+                print('Semantic Error - the equation (\"{0:s}\") passed to the bin() function cannot be evaluated.'.format(args[1]))
                 return False, ''
 
-            if args[1].isdigit():
-                num_bits = args[1]
-            else:
-                print('Semantic Error - the second argument to the bin function "{0:s}" is invalid. Only integer values are accepted.'.format(args[1]))
-                return False, ''
-
-            bin_val = format(dec_val, '0' + num_bits + 'b')
+            bin_val = format(dec_val, '0' + str(num_bits) + 'b')
 
             if len(bin_val) > int(num_bits):
                 print('Semantic Error - overflow from the bin() function: {0:d} cannot be represented with {1:s} binary bits.'.format(dec_val, num_bits))
@@ -163,17 +134,24 @@ def generate_force_calls(testblocks):
 
         for t in tokens:
             gen_code = ''
-            if re.search(r'^[\w\:\[\]]+\s*=\s*\d+$', t):
+            if re.search(r'^[\w\+\-\*\/\:\[\]]+\s*=\s*\d+$', t):
                 sub_tokens = [st.strip() for st in t.split('=')]
                 variable = sub_tokens[0]
                 assignment = sub_tokens[1]
 
                 # List variable force
-                match = re.search(r'\[\d+\:\d+\]', variable)
+                match = re.search(r'\[.+?:.+?\]', variable)
                 if match is not None:
                     indices_string = variable[match.start():match.end()]
                     variable = variable.replace(indices_string, '')
-                    indices = [int(i) for i in indices_string[1:-1].split(':')]
+
+                    indices = []
+                    try:
+                        indices = [int(eval(i)) for i in indices_string[1:-1].split(':')]
+                    except NameError or SyntaxError or ZeroDivisionError:
+                        print('Semantic Error - the equation used to index the vairable (\"{0:s}\") cannot be evaluated.'.format(variable + indices_string))
+                        return False
+
                     magnitude = abs(indices[0] - indices[1]) + 1
                     increment = 1
                     if indices[0] - indices[1] > 0:
@@ -194,6 +172,16 @@ def generate_force_calls(testblocks):
 
                 # Single variable force
                 else:
+                    # Index evaluation
+                    match = re.search(r'\[.+?\]', variable)
+                    if match is not None:
+                        try:
+                            indices_string = str(int(eval(match.group()[1:-1])))
+                            variable = variable.replace(match.group(), '[{0:s}]'.format(indices_string))
+                        except NameError or SyntaxError or ZeroDivisionError:
+                            print('Semantic Error - the equation used to index the vairable (\"{0:s}\") cannot be evaluated.'.format(variable))
+                            return False
+
                     gen_code = 'force {{{0:s}}} {1:s};'.format(variable, assignment)
 
                 testblocks[b] = testblocks[b].replace(t, gen_code, 1)
@@ -211,21 +199,27 @@ def generate_assert_func(testblocks):
             test_name = test_name_tokens[1]
 
         for t in tokens:
-            if re.search(r'^assert\s+[\w\:\[\]]+\s*\=\=\s*\d+$', t):
+            if re.search(r'^assert\s+[\w\+\-\*\/\:\[\]]+\s*\=\=\s*[01]+$', t):
                 assert_string = t
-                t = t.replace('==', ' ')
-                subtokens = [a for a in t.split(' ') if a != '']
-                variable = subtokens[1]
-                expected = subtokens[2]
+                subtokens = t.split('==')
+                variable = subtokens[0].strip().split(' ')[-1]
+                expected = subtokens[1].strip()
 
                 gen_code = ''
 
                 # List variable assertion
-                match = re.search(r'\[\d+\:\d+\]', variable)
+                match = re.search(r'\[.+?:.+?\]', variable)
                 if match is not None:
                     indices_string = variable[match.start():match.end()]
                     variable = variable.replace(indices_string, '')
-                    indices = [int(i) for i in indices_string[1:-1].split(':')]
+
+                    indices = []
+                    try:
+                        indices = [int(eval(i)) for i in indices_string[1:-1].split(':')]
+                    except NameError or SyntaxError or ZeroDivisionError:
+                        print('Semantic Error - the equation used to index the vairable (\"{0:s}\") cannot be evaluated.'.format(variable + indices_string))
+                        return False
+
                     magnitude = abs(indices[0] - indices[1]) + 1
                     increment = 1
                     if indices[0] - indices[1] > 0:
@@ -245,6 +239,16 @@ def generate_assert_func(testblocks):
 
                 # Single variable assertion
                 else:
+                    # Index evaluation
+                    match = re.search(r'\[.+?\]', variable)
+                    if match is not None:
+                        try:
+                            indices_string = str(int(eval(match.group()[1:-1])))
+                            variable = variable.replace(match.group(), '[{0:s}]'.format(indices_string))
+                        except NameError or SyntaxError or ZeroDivisionError:
+                            print('Semantic Error - the equation used to index the vairable (\"{0:s}\") cannot be evaluated.'.format(variable))
+                            return False
+
                     if len(expected) != 1:
                         print('Syntax Error - too many values passed to assert for the single variable \"{0:s}\".'.format(variable))
                         print('             - to assert multiple variables at once use a list variable instead.')
@@ -344,14 +348,6 @@ def parse_blocks(lines):
     else:
         print('Syntax Error - No meta block found.')
 
-    # metablock_indices = [(m.start(), m.end()) for m in re.finditer(r'meta\s*\{', file_string)]
-    # if len(metablock_indices) != 0:
-    #     if len(metablock_indices) > 1:
-    #         print('Semantic Warning - multiple meta blocks detected. Only the first block will be executed.')
-    #     indices = metablock_indices[0]
-    #     metablock = file_string[indices[1] + 1 : find_block_end(file_string[indices[1]:]) + 1]
-    #     #generate_meta(metablock)
-
     # Test blocks
     testblocks_indices = [(m.start(0), m.end(0)) for m in re.finditer(r'test\s*(\w+)?\s*\{', file_string)]
     testblocks = [file_string[indices[0]:indices[1] + find_block_end(file_string[indices[1]:]) + 1] for indices in testblocks_indices]
@@ -425,8 +421,8 @@ def parse_blocks(lines):
                 testblocks[i] = testblocks[i].replace(block, "".join(perm_sub_blocks), 1)
                 continue
 
-    generate_products(testblocks)
-    generate_sums(testblocks)
+    #generate_products(testblocks)
+    #generate_sums(testblocks)
     generate_bin_func(testblocks)
     generate_assert_func(testblocks)
     generate_force_calls(testblocks)

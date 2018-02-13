@@ -91,6 +91,44 @@ test my_test_shorthand2 {
 
 Here we can see that the bin() function takes two arguments. The first is either a hexadecimal value (prefixed with "0x"), a decimal value, or even an equation (such as 1\*2 + 3). The second argument is the number of bits that the resulting binary number should have. Pay attention when choosing this argument to avoid an overflow error.  
 
+##### 7seg() Function
+
+This function takes an expression (or hexadecimal value) as an argument and generates the appropriate input for a seven-segment active-low LED display. This can be useful for conveniently checking output of programs which utilize seven-segment LED displays.  
+
+~~~~
+test 7seg_function_example {
+	# Set the inputs to 1010, which is equivalent to A in hexadecimal
+	INPUT[3:0] = bin(0xA, 4);
+    
+    # Or using decimal notation (produces same result as above)
+    INPUT[3:0] = bin(10, 4);
+	
+    # assert the hex display is showing the correct value
+    assert HEX[6:0] == 7seg(10);
+    
+    # Or using hexadecimal notation (produces same result as above)
+    assert HEX[6:0] == 7seg(0xA);
+}
+~~~~
+
+It should be noted that expressions can also be passed as an argument to the 7seg() function. Thus, it can be very effective when used inside of a for loop. 
+
+As an extra example, lets assume that we have a circuit which displays an 8 bit binary number input across two seven-segment active-low LED displays. We can verify the program is working correctly with the following test case:
+
+~~~~
+test 7seg_function_extra_example {
+	for i in [0:255] {
+    	# Set the inputs to the binary value of i
+		INPUT[7:0] = bin(i, 8);
+        
+        # Assert that HEX0 is displaying the 4 least significant bits of the input
+        assert HEX0[6:0] == 7seg(i%16);
+        
+        # Assert that HEX1 is displaying the 4 most significant bits of the input
+        assert HEX1[6:0] == 7seg(i/16);
+    }
+~~~~
+
 #### The For Block
 The for block is used to repeat the same test with different indexable variables. It must be declared within a test block by using the **for** keyword, and it can be nested in other for blocks. An example can be seen below:
 

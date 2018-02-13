@@ -83,6 +83,53 @@ def find_block_end2(file_string, start_index = 0, bracket_type='{}'):
             return i + 1
     return len(file_string) - start_index
 
+def generate_7seg_func(testblocks):
+    for i in range(len(testblocks)):
+        match = re.search(r'7seg\s*\(', testblocks[i])
+        while match is not None:
+            end = find_block_end(testblocks[i][match.end(0):], bracket_type='()')
+            arg = testblocks[i][match.end(0):match.end(0) + end]
+            binval = 0
+
+            if arg.startswith('0x'):
+                try:
+                    binval = int(arg, 16)
+                except NameError or SyntaxError or ZeroDivisionError:
+                    print('Semantic Error - the equation (\"{0:s}\") passed to the 7seg() function cannot be evaluated.'.format(arg))
+                    return False
+            else:
+                try:
+                    binval = int(eval(arg))
+                except NameError or SyntaxError or ZeroDivisionError:
+                    print('Semantic Error - the equation (\"{0:s}\") passed to the 7seg() function cannot be evaluated.'.format(arg))
+                    return False
+
+            if binval > 15 or binval < 0:
+                print('Semantic Error - the equation (\"{0:s}\") passed to the 7seg() evaluates to {1:d} and cannot be displayed on a 7 segment display.'.format(arg, binval))
+                return False
+
+            decoder = {
+                0: '1000000',
+                1: '1111001',
+                2: '0100100',
+                3: '0110000',
+                4: '0011001',
+                5: '0010010',
+                6: '0000010',
+                7: '1111000',
+                8: '0000000',
+                9: '0010000',
+                10: '0001000',
+                11: '0000011',
+                12: '1000110',
+                13: '0100001',
+                14: '0000110',
+                15: '0001110'
+            }
+
+            testblocks[i] = testblocks[i][:match.start()] + decoder[binval] + testblocks[i][end + match.end() + 1:]
+            match = re.search(r'7seg\s*\(', testblocks[i])
+
 def generate_bin_func(testblocks):
     for i in range(len(testblocks)):
         match = re.search(r'bin\s*\(', testblocks[i])
@@ -286,7 +333,7 @@ def generate_for_blocks(testblocks):
                 increment = -1
 
             for j in range(indices[0], indices[1] + increment, increment):
-                var_pattern = re.compile(r'[\s:\[\*\+\-\/\(\=]' + variable + r'[\s;:\]\*\+\-\/\),]')
+                var_pattern = re.compile(r'[\s:%\[\*\+\-\/\(\=]' + variable + r'[\s;:%\]\*\+\-\/\),]')
                 var_match = var_pattern.search(find_mut)
                 while var_match is not None:
                     find_mut = find_mut.replace(var_match.group(), var_match.group().replace(variable, str(j)))
@@ -421,8 +468,7 @@ def parse_blocks(lines):
                 testblocks[i] = testblocks[i].replace(block, "".join(perm_sub_blocks), 1)
                 continue
 
-    #generate_products(testblocks)
-    #generate_sums(testblocks)
+    generate_7seg_func(testblocks)
     generate_bin_func(testblocks)
     generate_assert_func(testblocks)
     generate_force_calls(testblocks)

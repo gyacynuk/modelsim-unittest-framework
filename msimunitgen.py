@@ -1,9 +1,14 @@
+"""
+A simple unit test framework for Model Sim which allows for the generation of .do files which rigorously tests Verilog projects.
+Author: Griffin Yacynuk
+"""
+
 import sys
 import re
 
 filename = 'meta_test.txt'
 
-OPEN_BRACKETS = ['(', '{', '[']  # order of elements between these sets is crucial
+OPEN_BRACKETS = ['(', '{', '[']
 CLOSE_BRACKETS = [')', '}', ']']
 
 REQUIRED_META = ['vfile', 'vmodule']
@@ -11,7 +16,11 @@ meta_commands = []
 meta_dict = {'vlib': 'work', 'timescale': '1ns/1ns', 'timestep': '4ns', 'logfile': 'output.txt', 'genfile': 'out.do'}
 meta = []
 
+
 def log_bracket_error(lines, line, pos, open=True):
+    """
+    Logs an error due to a missing closing bracket, or an extra closing bracket.
+    """
     if open:
         print('Syntax Error - Unclosed bracket on line {0:d} at position {1:d}:'.format(line+1, pos))
     else:
@@ -19,7 +28,11 @@ def log_bracket_error(lines, line, pos, open=True):
     print('\t\"'+str(lines[line].strip()) + '\"')
     print('\t ' + ' '*pos + '^')
 
+
 def check_bracket_pairing(lines):
+    """
+    Ensures all brackets come in pairs.
+    """
     global OPEN_BRACKETS, CLOSE_BRACKETS
     passed = True
     stacks = [[], [], []]
@@ -45,7 +58,12 @@ def check_bracket_pairing(lines):
 
     return passed
 
+
 def check_assert_double_equals(lines):
+    """
+    Ensures double equals (==) are used in assertion statements. Single equals
+    are reserved for assignment.
+    """
     passed = True
     for l in lines:
         match = re.search(r'assert\s+[\w\:\[\]]+\s*\=\s*\d+', l)
@@ -56,23 +74,12 @@ def check_assert_double_equals(lines):
 
     return passed
 
-#annoying since you have to add one to the index, but it is used heavily
-# TODO depricate
-def find_block_end(file_string, start_index = 0, bracket_type='{}'):
-    bcount = 1
-    for i in range(start_index, len(file_string)):
-        if file_string[i] == bracket_type[0]:
-            bcount += 1
-        elif file_string[i] == bracket_type[1]:
-            bcount -= 1
-        if bcount == 0:
-            return i
-    return len(file_string)
 
-#new version, much easier to use
-# TODO replace the old verison with this one
-# Given a string, starting fron the start index, assuming that one bracket exists at start_index -1, return the index of the last bracket + 1
-def find_block_end2(file_string, start_index = 0, bracket_type='{}'):
+def find_block_end(file_string, start_index=0, bracket_type='{}'):
+    """
+    Given a string, starting fron the start index, assuming that one bracket
+    exists at start_index -1, return the index of the last bracket + 1.
+    """
     bcount = 1
     for i in range(start_index, len(file_string)):
         if file_string[i] == bracket_type[0]:
@@ -83,11 +90,15 @@ def find_block_end2(file_string, start_index = 0, bracket_type='{}'):
             return i + 1
     return len(file_string) - start_index
 
+
 def generate_7seg_func(testblocks):
+    """
+    Convert the shorthand 7seg syntax into its full expanded form.
+    """
     for i in range(len(testblocks)):
         match = re.search(r'7seg\s*\(', testblocks[i])
         while match is not None:
-            end = find_block_end(testblocks[i][match.end(0):], bracket_type='()')
+            end = find_block_end(testblocks[i][match.end(0):], bracket_type='()') - 1
             arg = testblocks[i][match.end(0):match.end(0) + end]
             binval = 0
 
@@ -130,14 +141,18 @@ def generate_7seg_func(testblocks):
             testblocks[i] = testblocks[i][:match.start()] + decoder[binval] + testblocks[i][end + match.end() + 1:]
             match = re.search(r'7seg\s*\(', testblocks[i])
 
+
 def generate_bin_func(testblocks):
+    """
+    Convert the shorthand bin function into its full expanded form.
+    """
     for i in range(len(testblocks)):
         match = re.search(r'bin\s*\(', testblocks[i])
         dec_val = 0
         num_bits = 0
         bin_val = ''
         while match is not None:
-            end = find_block_end(testblocks[i][match.end(0):], bracket_type='()')
+            end = find_block_end(testblocks[i][match.end(0):], bracket_type='()') - 1
             args = testblocks[i][match.end(0):match.end(0) + end].split(',')
             if len(args) != 2:
                 print('Semantic Error - the bin() function takes exactly 2 arguments.')
@@ -173,7 +188,11 @@ def generate_bin_func(testblocks):
 
     return True
 
+
 def generate_force_calls(testblocks):
+    """
+    Expand the shorthand assignment statements into ModelSim force statements.
+    """
     for b in range(len(testblocks)):
         formatted_block = testblocks[b].replace('{', ';')
         formatted_block = formatted_block.replace('}', ';')
@@ -235,6 +254,9 @@ def generate_force_calls(testblocks):
 
 
 def generate_assert_func(testblocks):
+    """
+    Convert the shorthand asserion statements into ModelSim assertions.
+    """
     for b in range(len(testblocks)):
         formatted_block = testblocks[b].replace('{', ';')
         formatted_block = formatted_block.replace('}', ';')
@@ -307,6 +329,9 @@ def generate_assert_func(testblocks):
 
 
 def generate_for_blocks(testblocks):
+    """
+    Expand the shorthand for statement into its expanded form.
+    """
     found_match = False
 
     for i in range(len(testblocks)):
@@ -315,7 +340,7 @@ def generate_for_blocks(testblocks):
 
         if match is not None:
             found_match = True
-            end = find_block_end2(testblocks[i], match.end())
+            end = find_block_end(testblocks[i], match.end())
             find = testblocks[i][match.start():end]
             find_mut = find
             replace = ''
@@ -333,7 +358,7 @@ def generate_for_blocks(testblocks):
                 increment = -1
 
             for j in range(indices[0], indices[1] + increment, increment):
-                var_pattern = re.compile(r'[\s:%\[\*\+\-\/\(\=]' + variable + r'[\s;:%\]\*\+\-\/\),]')
+                var_pattern = re.compile(r'[\s:%\[\^\*\+\-\/\(\=]' + variable + r'[\s;:%\]\^\*\+\-\/\),]')
                 var_match = var_pattern.search(find_mut)
                 while var_match is not None:
                     find_mut = find_mut.replace(var_match.group(), var_match.group().replace(variable, str(j)))
@@ -347,7 +372,11 @@ def generate_for_blocks(testblocks):
     if found_match:
         generate_for_blocks(testblocks)
 
+
 def add_meta_command(command, value):
+    """
+    Add meta command to dict if it has not already been declared.
+    """
     if command in meta_dict or command in REQUIRED_META:
         meta_dict[command] = value
     else:
@@ -355,6 +384,9 @@ def add_meta_command(command, value):
 
 
 def generate_meta(meta_string):
+    """
+    Generate ModelSim metadata.
+    """
     global meta, meta_commands, meta_dict
 
     lines = [t.strip() for t in meta_string.replace('=', ' ').split(';') if t != '']
@@ -376,28 +408,25 @@ def generate_meta(meta_string):
     return True
 
 
-
-def generate_test(test):
-    pass
-
-def generate_permute(permute):
-    pass
-
 def parse_blocks(lines):
+    """
+    Parse the different program blocks from the user's input file, and process
+    it into a format compatable with ModelSim.
+    """
     file_string = ''.join([l.strip() if not l.strip().startswith("#") else '' for l in lines])
 
     # Parse top level blocks (meta, test) since they cannot be nested
     # Meta blocks
     match = re.search(r'meta\s*\{', file_string)
     if match is not None:
-        metablock = file_string[match.end():find_block_end2(file_string, match.end())-1]
+        metablock = file_string[match.end():find_block_end(file_string, match.end())-1]
         generate_meta(metablock)
     else:
         print('Syntax Error - No meta block found.')
 
     # Test blocks
     testblocks_indices = [(m.start(0), m.end(0)) for m in re.finditer(r'test\s*(\w+)?\s*\{', file_string)]
-    testblocks = [file_string[indices[0]:indices[1] + find_block_end(file_string[indices[1]:]) + 1] for indices in testblocks_indices]
+    testblocks = [file_string[indices[0]:indices[1] + find_block_end(file_string[indices[1]:])] for indices in testblocks_indices]
 
     # For blocks need to be generated before permute blocks
     generate_for_blocks(testblocks)
@@ -414,11 +443,10 @@ def parse_blocks(lines):
 
         match = re.search(r'permute\s*\{', formatted_block)
         while match is not None:
-            end = match.end() + find_block_end(formatted_block[match.end():]) + 1
+            end = match.end() + find_block_end(formatted_block[match.end():])
             permute_blocks.append(formatted_block[match.start(): end])
             formatted_block = formatted_block[end:]
             match = re.search(r'permute\s*\{', formatted_block)
-
 
     for block in permute_blocks:
         # Assert that permute blocks are not nested
@@ -434,7 +462,7 @@ def parse_blocks(lines):
 
             # List assignment
             list_match = re.search(r'\w+\[\d+\:\d+\]\s*\=\s*\*;', perm_sub_blocks[0])
-            if list_match != None and match.start() == list_match.start():
+            if list_match is not None and match.start() == list_match.start():
                 var_pattern = re.compile(r'\[\d+:\d+\]')
                 var_match = var_pattern.search(perm_sub_blocks[0], match.start())
                 src_line = match.group()
@@ -482,21 +510,21 @@ def parse_blocks(lines):
 
     return True
 
-
-if len(sys.argv) == 1:
-    filename = input('Enter filename of unit test file: ')
-elif len(sys.argv) == 2:
-    filename = sys.argv[1]
-else:
-    print('A unit test file must be passed in as an argument.')
-    sys.exit(0)
-
-with open(filename, 'r') as file:
-    lines = file.readlines()
-    passed_syntax = check_bracket_pairing(lines)
-    passed_syntax = passed_syntax and check_assert_double_equals(lines)
-
-    if passed_syntax and parse_blocks(lines):
-        print('File generation successful')
+if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        filename = input('Enter filename of unit test file: ')
+    elif len(sys.argv) == 2:
+        filename = sys.argv[1]
     else:
-        print('Syntax errors are present - file generation aborted')
+        print('A unit test file must be passed in as an argument.')
+        sys.exit(0)
+
+    with open(filename, 'r') as file:
+        lines = file.readlines()
+        passed_syntax = check_bracket_pairing(lines)
+        passed_syntax = passed_syntax and check_assert_double_equals(lines)
+
+        if passed_syntax and parse_blocks(lines):
+            print('File generation successful')
+        else:
+            print('Syntax errors are present - file generation aborted')
